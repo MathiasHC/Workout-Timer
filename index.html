@@ -92,6 +92,7 @@
   }
   svg { width: 100%; max-width: 440px; height: auto; display: block; }
   .readout { font-family: var(--mono); font-size: clamp(2rem, 9vw, 3rem); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .readout.ready { color: var(--accent); }
   .status { font-size: 1rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); min-height: 1.3em; text-align: center; }
   .controls { display: flex; gap: 12px; }
   button {
@@ -177,6 +178,13 @@
       </div>
       <span class="hint" id="roundsHint">0 = off · duration = interval × rounds</span>
     </div>
+    <div class="field">
+      <span>Get ready</span>
+      <div class="time">
+        <input id="getReady" type="number" min="0" max="99" value="10" inputmode="numeric" aria-label="Get-ready countdown in seconds">
+      </div>
+      <span class="hint">seconds before a fresh start · 0 = off</span>
+    </div>
   </form>
 </aside>
 
@@ -217,7 +225,7 @@
   };
 
   // Config
-  let cfg = { dir: "up", total: 17 * 60, interval: 150, rounds: 0 };
+  let cfg = { dir: "up", total: 17 * 60, interval: 150, rounds: 0, getReady: 10 };
   const MAX_DOTS = 60;
 
   function readSettings() {
@@ -228,7 +236,7 @@
       total = interval * rounds;
       setDurationInputs(total);
     }
-    cfg = { dir: $("dirDown").checked ? "down" : "up", total: Math.max(1, total), interval, rounds };
+    cfg = { dir: $("dirDown").checked ? "down" : "up", total: Math.max(1, total), interval, rounds, getReady: int("getReady", 99) };
     try { localStorage.setItem("interval-dial", JSON.stringify(cfg)); } catch (e) {}
   }
   function setDurationInputs(total) {
@@ -253,6 +261,7 @@
     $(cfg.dir === "down" ? "dirDown" : "dirUp").checked = true;
     setDurationInputs(cfg.total);
     $("rounds").value = cfg.rounds || 0;
+    $("getReady").value = cfg.getReady ?? 10;
     $("intM").value = Math.floor(cfg.interval / 60);
     $("intS").value = cfg.interval % 60;
   }
@@ -346,6 +355,7 @@
   const readout = $("readout"), status = $("status"), startBtn = $("startBtn"), settings = $("settings");
   let running = false, elapsedBefore = 0, startedAt = 0, raf = 0, pumpTimer = 0;
   let ctx = null, scheduled = [], nextMarkIdx = 0, endScheduled = false, wakeLock = null;
+  let countingDown = false, cdTimer = 0, cdEnd = 0;
 
   const elapsed = () => Math.min(cfg.total, elapsedBefore + (running ? (performance.now() - startedAt) / 1000 : 0));
   const idleText = () => cfg.rounds > 0
@@ -418,7 +428,40 @@
     if (elapsed() >= cfg.total) reset();
     ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === "suspended") await ctx.resume();
-    startedAt = performance.now();
+    if (elapsedBefore === 0 && cfg.getReady > 0) beginCountdown();
+    else beginRunning(performance.now());
+  }
+
+  // Get-ready countdown: the go beep sits on the audio clock and the timer's zero is pinned to it.
+  async function beginCountdown() {
+    countingDown = true;
+    cdEnd = performance.now() + cfg.getReady * 1000;
+    tone(ctx.currentTime + cfg.getReady, 1320, 0.45, 0.4);
+    startBtn.textContent = "Cancel";
+    lockSettings(true);
+    readout.classList.add("ready");
+    cdTick();
+    cdTimer = setInterval(cdTick, 100);
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+  }
+  function cdTick() {
+    const left = (cdEnd - performance.now()) / 1000;
+    if (left > 0) {
+      readout.textContent = String(Math.ceil(left));
+      status.textContent = "Get ready";
+      return;
+    }
+    endCountdown();
+    beginRunning(cdEnd);
+  }
+  function endCountdown() {
+    countingDown = false;
+    clearInterval(cdTimer);
+    readout.classList.remove("ready");
+  }
+
+  async function beginRunning(t0) {
+    startedAt = t0;
     running = true;
     const e = elapsed();
     nextMarkIdx = MARKS.findIndex(m => m > e); if (nextMarkIdx < 0) nextMarkIdx = MARKS.length;
@@ -426,10 +469,11 @@
     pumpTimer = setInterval(pump, 1000);
     startBtn.textContent = "Pause";
     lockSettings(true);
-    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
     render();
+    if (!wakeLock) try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
   }
   function stopRunning() {
+    if (countingDown) endCountdown();
     running = false;
     cancelAnimationFrame(raf);
     clearInterval(pumpTimer);
@@ -466,7 +510,7 @@
     reset();
   }
 
-  startBtn.addEventListener("click", () => running ? pause() : start());
+  startBtn.addEventListener("click", () => running ? pause() : countingDown ? reset() : start());
   $("resetBtn").addEventListener("click", reset);
   settings.addEventListener("input", applySettings);
   settings.addEventListener("change", applySettings);
