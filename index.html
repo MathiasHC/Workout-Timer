@@ -1,0 +1,522 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Interval Dial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --ground: #eef1ee;
+    --face: #fbfcfa;
+    --ink: #1c2420;
+    --muted: #6d7a73;
+    --tick: #9aa69f;
+    --accent: #d2551f;
+    --track: #dde3de;
+    --rim: #c9d1cb;
+    --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #121614; --face: #1b201d; --ink: #e6ebe7; --muted: #8e9a93;
+      --tick: #5d6962; --accent: #f07a45; --track: #2a312d; --rim: #333b36;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #121614; --face: #1b201d; --ink: #e6ebe7; --muted: #8e9a93;
+    --tick: #5d6962; --accent: #f07a45; --track: #2a312d; --rim: #333b36;
+  }
+  html, body { height: 100%; }
+  body { margin: 0; -webkit-text-size-adjust: 100%; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: var(--display);
+    --sidebar-w: 300px;
+  }
+  .content {
+    min-height: 100%; box-sizing: border-box;
+    display: flex; justify-content: center; align-items: center;
+    padding-inline: 16px; padding-block: 64px;
+    transition: padding-left 0.25s ease;
+  }
+  main { width: min(100%, 520px); display: flex; flex-direction: column; align-items: center; gap: 20px; }
+
+  /* Sidebar: pushes the dial aside on wide screens, slides over it on phones */
+  .sidebar {
+    position: fixed; z-index: 20; top: 0; bottom: 0; left: 0;
+    width: min(var(--sidebar-w), 88vw); box-sizing: border-box;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    background: var(--face); border-right: 1.5px solid var(--rim);
+    overflow-y: auto; display: flex; flex-direction: column; gap: 20px;
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform 0.25s ease, visibility 0s linear 0.25s;
+  }
+  body.sb-open .sidebar { transform: none; visibility: visible; transition: transform 0.25s ease; }
+  .sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .sidebar-head h2 { margin: 0; font-size: 1.35rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .backdrop { position: fixed; inset: 0; z-index: 15; background: rgb(0 0 0 / 0.35); }
+  @media (min-width: 800px) {
+    body.sb-open .content { padding-left: calc(var(--sidebar-w) + 16px); }
+    .backdrop { display: none; }
+  }
+  .icon-btn {
+    width: 40px; height: 40px; padding: 0; border-radius: 10px;
+    display: grid; place-items: center; letter-spacing: 0;
+  }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .menu-btn { position: fixed; z-index: 10; top: calc(10px + env(safe-area-inset-top, 0px)); left: 10px; }
+  body.sb-open .menu-btn { visibility: hidden; }
+
+  /* Light / dark switch */
+  .theme-switch {
+    position: fixed; z-index: 30; top: calc(10px + env(safe-area-inset-top, 0px)); right: 10px;
+    width: 64px; height: 32px; padding: 0; border-radius: 999px;
+    background: var(--track); border: 1.5px solid var(--rim);
+  }
+  .theme-switch .knob {
+    position: absolute; top: 2px; left: 2px; width: 25px; height: 25px; border-radius: 50%;
+    background: var(--face); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+    display: grid; place-items: center; color: var(--accent);
+    transition: transform 0.2s ease;
+  }
+  .theme-switch[aria-checked="true"] .knob { transform: translateX(32px); }
+  .theme-switch .knob svg { width: 15px; height: 15px; }
+  .theme-switch .moon, .theme-switch[aria-checked="true"] .sun { display: none; }
+  .theme-switch[aria-checked="true"] .moon { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar, body.sb-open .sidebar, .content, .theme-switch .knob { transition: none; }
+  }
+  svg { width: 100%; max-width: 440px; height: auto; display: block; }
+  .readout { font-family: var(--mono); font-size: clamp(2rem, 9vw, 3rem); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .status { font-size: 1rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); min-height: 1.3em; text-align: center; }
+  .controls { display: flex; gap: 12px; }
+  button {
+    font: 600 1.1rem/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 14px 28px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--rim); background: var(--face); color: var(--ink);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 9ch; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  .settings { display: flex; flex-direction: column; gap: 22px; }
+  .settings[aria-disabled="true"] { opacity: 0.5; }
+  .field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .field > span { font-size: 0.85rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .seg { display: flex; border: 1.5px solid var(--rim); border-radius: 999px; overflow: hidden; }
+  .seg label { flex: 1; display: flex; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label span {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 9px 4px; font-weight: 600; letter-spacing: 0.04em; font-size: 1rem; white-space: nowrap;
+  }
+  .seg input:checked + span { background: var(--ink); color: var(--ground); }
+  .seg input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: -3px; }
+  .time { display: flex; align-items: center; gap: 4px; font-family: var(--mono); }
+  .time input {
+    width: 100%; min-width: 0; box-sizing: border-box;
+    font: 500 1.15rem var(--mono); font-variant-numeric: tabular-nums; text-align: center;
+    padding: 7px 2px; border: 1.5px solid var(--rim); border-radius: 8px;
+    background: var(--face); color: var(--ink);
+  }
+  .time b { color: var(--muted); font-weight: 500; }
+  .time input:disabled { opacity: 0.55; }
+  .hint { font-size: 0.8rem; color: var(--muted); letter-spacing: 0.04em; }
+</style>
+
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open timer settings">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+</button>
+<button class="theme-switch" id="themeSwitch" type="button" role="switch" aria-checked="false" aria-label="Dark mode">
+  <span class="knob">
+    <svg class="sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="3.5" fill="currentColor"/><path d="M10 1.5v2.5M10 16v2.5M1.5 10H4M16 10h2.5M4 4l1.8 1.8M14.2 14.2 16 16M4 16l1.8-1.8M14.2 5.8 16 4"/></svg>
+    <svg class="moon" viewBox="0 0 20 20"><path fill="currentColor" d="M16.5 12.6A7 7 0 0 1 7.4 3.5a7 7 0 1 0 9.1 9.1Z"/></svg>
+  </span>
+</button>
+
+<div class="backdrop" id="backdrop" hidden></div>
+<aside class="sidebar" id="sidebar" aria-label="Timer settings">
+  <div class="sidebar-head">
+    <h2>Workout timer</h2>
+    <button class="icon-btn" id="closeBtn" type="button" aria-label="Close timer settings">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5 5 15"/></svg>
+    </button>
+  </div>
+<form class="settings" id="settings" autocomplete="off">
+    <div class="field">
+      <span>Direction</span>
+      <div class="seg" role="radiogroup" aria-label="Direction">
+        <label><input type="radio" name="dir" id="dirUp" value="up" checked><span>Count up</span></label>
+        <label><input type="radio" name="dir" id="dirDown" value="down"><span>Count down</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <span>Duration</span>
+      <div class="time">
+        <input id="durH" type="number" min="0" max="99" value="0" inputmode="numeric" aria-label="Duration hours"><b>:</b>
+        <input id="durM" type="number" min="0" max="999" value="17" inputmode="numeric" aria-label="Duration minutes"><b>:</b>
+        <input id="durS" type="number" min="0" max="59" value="0" inputmode="numeric" aria-label="Duration seconds">
+      </div>
+      <span class="hint" id="durHint">hh : mm : ss</span>
+    </div>
+    <div class="field">
+      <span>Beep interval</span>
+      <div class="time">
+        <input id="intM" type="number" min="0" max="999" value="2" inputmode="numeric" aria-label="Interval minutes"><b>:</b>
+        <input id="intS" type="number" min="0" max="59" value="30" inputmode="numeric" aria-label="Interval seconds">
+      </div>
+      <span class="hint">mm : ss — 0:00 = no interval beeps</span>
+    </div>
+    <div class="field">
+      <span>Rounds</span>
+      <div class="time">
+        <input id="rounds" type="number" min="0" max="999" value="0" inputmode="numeric" aria-label="Rounds">
+      </div>
+      <span class="hint" id="roundsHint">0 = off · duration = interval × rounds</span>
+    </div>
+  </form>
+</aside>
+
+<div class="content">
+<main>
+  <svg id="dial" viewBox="-160 -160 320 320" role="img" aria-label="Analog timer dial"></svg>
+  <div class="readout" id="readout">00:00</div>
+  <div class="status" id="status"></div>
+  <div class="controls">
+    <button class="primary" id="startBtn" type="button">Start</button>
+    <button id="resetBtn" type="button">Reset</button>
+  </div>
+
+</main>
+</div>
+
+<script>
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const $ = id => document.getElementById(id);
+  const svg = $("dial");
+  const el = (tag, attrs, parent = svg) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    parent.appendChild(n);
+    return n;
+  };
+  const int = (id, max) => Math.max(0, Math.min(max, Math.floor(Number($(id).value) || 0)));
+  const fmt = s => {
+    const t = Math.max(0, Math.floor(s)), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, sec = t % 60;
+    const mm = String(m).padStart(2, "0"), ss = String(sec).padStart(2, "0");
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  };
+  const fmtShort = s => { // human interval text, e.g. "2½ min", "45 s"
+    if (s % 60 === 0) return `${s / 60} min`;
+    if (s % 30 === 0 && s > 60) return `${Math.floor(s / 60)}½ min`;
+    return s < 60 ? `${s} s` : fmt(s);
+  };
+
+  // Config
+  let cfg = { dir: "up", total: 17 * 60, interval: 150, rounds: 0 };
+  const MAX_DOTS = 60;
+
+  function readSettings() {
+    const interval = int("intM", 999) * 60 + int("intS", 59);
+    const rounds = interval > 0 ? int("rounds", 999) : 0;
+    let total = int("durH", 99) * 3600 + int("durM", 999) * 60 + int("durS", 59);
+    if (rounds > 0) {
+      total = interval * rounds;
+      setDurationInputs(total);
+    }
+    cfg = { dir: $("dirDown").checked ? "down" : "up", total: Math.max(1, total), interval, rounds };
+    try { localStorage.setItem("interval-dial", JSON.stringify(cfg)); } catch (e) {}
+  }
+  function setDurationInputs(total) {
+    $("durH").value = Math.floor(total / 3600);
+    $("durM").value = Math.floor(total / 60) % 60;
+    $("durS").value = total % 60;
+  }
+  // Rounds needs an interval; while rounds are on, the duration is derived and read-only.
+  function syncFieldStates() {
+    const byRounds = cfg.rounds > 0;
+    ["durH", "durM", "durS"].forEach(id => $(id).disabled = byRounds);
+    $("rounds").disabled = cfg.interval === 0;
+    $("durHint").textContent = byRounds ? `set by ${cfg.rounds} × ${fmtShort(cfg.interval)}` : "hh : mm : ss";
+    $("roundsHint").textContent = cfg.interval === 0 ? "set an interval to use rounds" : "0 = off · duration = interval × rounds";
+  }
+
+  function loadSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("interval-dial") || "null");
+      if (saved && saved.total > 0) cfg = saved;
+    } catch (e) {}
+    $(cfg.dir === "down" ? "dirDown" : "dirUp").checked = true;
+    setDurationInputs(cfg.total);
+    $("rounds").value = cfg.rounds || 0;
+    $("intM").value = Math.floor(cfg.interval / 60);
+    $("intS").value = cfg.interval % 60;
+  }
+  const marks = () => {
+    const out = [];
+    if (cfg.interval > 0) for (let t = cfg.interval; t < cfg.total - 1e-6; t += cfg.interval) out.push(t);
+    return out;
+  };
+
+  // Dial — rebuilt whenever the settings change
+  const R = 128, C = 2 * Math.PI * R;
+  let hand, secHand, progress, markDots = [], MARKS = [];
+
+  function niceStep(total) {
+    const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
+    return steps.find(s => total / s <= 12) || 7200;
+  }
+  function label(s, major) {
+    if (major % 60 === 0) return s >= 3600 && major % 3600 === 0 ? `${s / 3600}h` : String(s / 60);
+    return major < 60 && cfg.total <= 60 ? String(s) : fmt(s).replace(/^0/, "");
+  }
+
+  function zeroLabel(T, major) {
+    if (major % 3600 === 0 && T % 3600 === 0) return `${T / 3600}h`;
+    if (major % 60 === 0 && T % 60 === 0) return String(T / 60);
+    return T <= 60 ? String(T) : fmt(T).replace(/^0/, "");
+  }
+
+  function buildDial() {
+    svg.replaceChildren();
+    const T = cfg.total;
+    const pt = (s, r) => { const a = (s / T) * 2 * Math.PI - Math.PI / 2; return [Math.cos(a) * r, Math.sin(a) * r]; };
+
+    el("circle", { r: 150, fill: "var(--face)", stroke: "var(--rim)", "stroke-width": 2 });
+    el("circle", { r: R, fill: "none", stroke: "var(--track)", "stroke-width": 8 });
+    progress = el("circle", {
+      r: R, fill: "none", stroke: "var(--accent)", "stroke-width": 8,
+      "stroke-dasharray": `0 ${C}`, transform: "rotate(-90)", opacity: 0.35
+    });
+
+    const major = niceStep(T);
+    const MINOR = { 1: 1, 2: 1, 5: 1, 10: 2, 15: 5, 30: 5, 60: 15, 120: 30, 300: 60, 600: 60, 900: 300, 1800: 300, 3600: 900, 7200: 1800 };
+    const minor = MINOR[major];
+    const unitMin = major % 60 === 0;
+    for (let s = 0; s < T - 1e-6; s += minor) {
+      const isMajor = Math.abs(s / major - Math.round(s / major)) < 1e-6;
+      const [x1, y1] = pt(s, isMajor ? 108 : 114), [x2, y2] = pt(s, 120);
+      el("line", { x1, y1, x2, y2, stroke: isMajor ? "var(--ink)" : "var(--tick)", "stroke-width": isMajor ? 2 : 1.2, "stroke-linecap": "round" });
+      if (isMajor && (s === 0 || T - s >= major * 0.5)) {
+        const [tx, ty] = pt(s, 94);
+        const t = el("text", {
+          x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "central",
+          fill: "var(--ink)", "font-family": "var(--display)", "font-weight": 600, "font-size": s === 0 ? 13 : 15
+        });
+        t.textContent = s === 0 ? `0 / ${zeroLabel(T, major)}` : label(s, major);
+      }
+    }
+
+    // Interval beep marks, placed where the hand will be when each beep sounds
+    MARKS = marks();
+    markDots = MARKS.length <= MAX_DOTS ? MARKS.map(m => {
+      const [x, y] = pt(cfg.dir === "up" ? m : T - m, 140);
+      return el("circle", { cx: x, cy: y, r: 5, fill: "var(--face)", stroke: "var(--accent)", "stroke-width": 2 });
+    }) : [];
+    const [fx, fy] = pt(0, 140);
+    el("rect", { x: fx - 5, y: fy - 5, width: 10, height: 10, fill: "var(--accent)", transform: `rotate(45 ${fx} ${fy})` });
+
+    // Seconds sub-dial
+    const sub = el("g", { transform: "translate(0 46)" });
+    el("circle", { r: 26, fill: "none", stroke: "var(--track)", "stroke-width": 1.5 }, sub);
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * 2 * Math.PI - Math.PI / 2;
+      el("line", { x1: Math.cos(a) * 21, y1: Math.sin(a) * 21, x2: Math.cos(a) * 25, y2: Math.sin(a) * 25,
+        stroke: i % 3 ? "var(--tick)" : "var(--ink)", "stroke-width": 1 }, sub);
+    }
+    el("text", { y: -8, "text-anchor": "middle", fill: "var(--muted)", "font-family": "var(--display)", "font-size": 8, "letter-spacing": 1 }, sub).textContent = "SEC";
+    secHand = el("line", { x1: 0, y1: 4, x2: 0, y2: -22, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-linecap": "round" }, sub);
+    el("circle", { r: 2.5, fill: "var(--accent)" }, sub);
+
+    el("text", { y: -42, "text-anchor": "middle", fill: "var(--muted)", "font-family": "var(--display)", "font-size": 10, "letter-spacing": 2 })
+      .textContent = `${unitMin ? (major % 3600 === 0 && T >= 7200 ? "HOURS" : "MINUTES") : "TIME"} · ${cfg.dir === "up" ? "ELAPSED" : "REMAINING"}`;
+
+    hand = el("g", {});
+    el("line", { x1: 0, y1: 18, x2: 0, y2: -124, stroke: "var(--ink)", "stroke-width": 3, "stroke-linecap": "round" }, hand);
+    el("circle", { r: 7, fill: "var(--ink)" });
+    el("circle", { r: 2.5, fill: "var(--accent)" });
+    svg.setAttribute("aria-label", `Analog timer dial, ${fmt(T)} counting ${cfg.dir}`);
+  }
+
+  // Runtime state
+  const readout = $("readout"), status = $("status"), startBtn = $("startBtn"), settings = $("settings");
+  let running = false, elapsedBefore = 0, startedAt = 0, raf = 0, pumpTimer = 0;
+  let ctx = null, scheduled = [], nextMarkIdx = 0, endScheduled = false, wakeLock = null;
+
+  const elapsed = () => Math.min(cfg.total, elapsedBefore + (running ? (performance.now() - startedAt) / 1000 : 0));
+  const idleText = () => cfg.rounds > 0
+    ? `${cfg.rounds} rounds of ${fmtShort(cfg.interval)} · ${fmt(cfg.total)} total`
+    : cfg.interval > 0
+    ? `Beeps every ${fmtShort(cfg.interval)} · tone at ${fmt(cfg.total)}`
+    : `No interval beeps · tone at ${fmt(cfg.total)}`;
+
+  function render() {
+    const e = elapsed(), T = cfg.total;
+    const shown = cfg.dir === "up" ? e : T - e;
+    hand.setAttribute("transform", `rotate(${(shown / T) * 360})`);
+    secHand.setAttribute("transform", `rotate(${(shown % 60) * 6})`);
+    progress.setAttribute("stroke-dasharray", `${(shown / T) * C} ${C}`);
+    readout.textContent = cfg.dir === "up" ? fmt(e) : fmt(Math.ceil(T - e - 1e-9));
+    markDots.forEach((d, i) => d.setAttribute("fill", e >= MARKS[i] ? "var(--accent)" : "var(--face)"));
+    if (running) {
+      const next = MARKS.find(m => m > e);
+      const left = next !== undefined ? `Next beep in ${fmt(next - e + 0.999)}` : `Finish in ${fmt(T - e + 0.999)}`;
+      status.textContent = cfg.rounds > 0
+        ? `Round ${Math.min(cfg.rounds, Math.floor(e / cfg.interval) + 1)} of ${cfg.rounds} · ${left}` : left;
+    }
+    if (running && e >= T) finish();
+    else if (running) raf = requestAnimationFrame(render);
+  }
+
+  function tone(at, freq, dur, peak = 0.35) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + 0.01);
+    g.gain.setValueAtTime(peak, at + dur - 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(at); o.stop(at + dur + 0.02);
+    o.onended = () => { scheduled = scheduled.filter(x => x !== o); };
+    scheduled.push(o);
+  }
+
+  // Beeps go on the audio clock a little ahead of time, so a throttled background tab still beeps on time.
+  const LOOKAHEAD = 90;
+  function pump() {
+    if (!running) return;
+    const e = elapsed(), now = ctx.currentTime;
+    while (nextMarkIdx < MARKS.length && MARKS[nextMarkIdx] - e <= LOOKAHEAD) {
+      const m = MARKS[nextMarkIdx++];
+      if (m <= e) continue;
+      const at = now + (m - e);
+      tone(at, 880, 0.18); tone(at + 0.25, 880, 0.18);
+    }
+    if (!endScheduled && cfg.total - e <= LOOKAHEAD) {
+      endScheduled = true;
+      const at = now + (cfg.total - e);
+      tone(at, 660, 0.25); tone(at + 0.35, 660, 0.25); tone(at + 0.7, 990, 0.8);
+    }
+  }
+  function cancelBeeps() {
+    scheduled.forEach(o => { try { o.stop(); } catch (e) {} });
+    scheduled = [];
+    endScheduled = false;
+  }
+
+  function lockSettings(locked) {
+    settings.setAttribute("aria-disabled", locked);
+    settings.querySelectorAll("input").forEach(i => i.disabled = locked);
+    if (!locked) syncFieldStates();
+  }
+
+  async function start() {
+    if (elapsed() >= cfg.total) reset();
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") await ctx.resume();
+    startedAt = performance.now();
+    running = true;
+    const e = elapsed();
+    nextMarkIdx = MARKS.findIndex(m => m > e); if (nextMarkIdx < 0) nextMarkIdx = MARKS.length;
+    pump();
+    pumpTimer = setInterval(pump, 1000);
+    startBtn.textContent = "Pause";
+    lockSettings(true);
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+    render();
+  }
+  function stopRunning() {
+    running = false;
+    cancelAnimationFrame(raf);
+    clearInterval(pumpTimer);
+    releaseWake();
+  }
+  function pause() {
+    elapsedBefore = elapsed();
+    stopRunning(); cancelBeeps();
+    startBtn.textContent = "Resume";
+    status.textContent = "Paused";
+  }
+  function finish() {
+    elapsedBefore = cfg.total;
+    stopRunning();
+    scheduled = []; endScheduled = false; // let the final tone ring out
+    startBtn.textContent = "Start";
+    status.textContent = cfg.rounds > 0 ? `${cfg.rounds} rounds — done` : `${fmt(cfg.total)} — done`;
+    lockSettings(false);
+    render();
+  }
+  function reset() {
+    stopRunning(); cancelBeeps();
+    elapsedBefore = 0;
+    startBtn.textContent = "Start";
+    status.textContent = idleText();
+    lockSettings(false);
+    render();
+  }
+  function releaseWake() { try { wakeLock?.release(); } catch (e) {} wakeLock = null; }
+
+  function applySettings() {
+    readSettings();
+    buildDial();
+    reset();
+  }
+
+  startBtn.addEventListener("click", () => running ? pause() : start());
+  $("resetBtn").addEventListener("click", reset);
+  settings.addEventListener("input", applySettings);
+  settings.addEventListener("change", applySettings);
+  settings.addEventListener("submit", e => e.preventDefault());
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible" && running && !wakeLock) {
+      try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+    }
+  });
+
+  // Theme: a light/dark switch. First visit starts from the host's theme or the OS preference.
+  const root = document.documentElement, themeSwitch = $("themeSwitch");
+  function applyTheme(t) {
+    root.setAttribute("data-theme", t);
+    themeSwitch.setAttribute("aria-checked", t === "dark");
+  }
+  let theme = null;
+  try { theme = localStorage.getItem("interval-dial-theme"); } catch (e) {}
+  if (theme !== "light" && theme !== "dark") {
+    theme = root.getAttribute("data-theme") ||
+      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  }
+  applyTheme(theme);
+  themeSwitch.addEventListener("click", () => {
+    theme = theme === "dark" ? "light" : "dark";
+    applyTheme(theme);
+    try { localStorage.setItem("interval-dial-theme", theme); } catch (e) {}
+  });
+
+  // Sidebar: open by default on wide screens; remembers its last state.
+  const menuBtn = $("menuBtn"), backdrop = $("backdrop"), wide = window.matchMedia("(min-width: 800px)");
+  function setSidebar(open, remember = true) {
+    document.body.classList.toggle("sb-open", open);
+    menuBtn.setAttribute("aria-expanded", open);
+    backdrop.hidden = !open;
+    if (remember) try { localStorage.setItem("interval-dial-sidebar", open ? "open" : "closed"); } catch (e) {}
+  }
+  let sb = null;
+  try { sb = localStorage.getItem("interval-dial-sidebar"); } catch (e) {}
+  setSidebar(sb ? sb === "open" : wide.matches, false);
+  menuBtn.addEventListener("click", () => { setSidebar(true); $("closeBtn").focus(); });
+  $("closeBtn").addEventListener("click", () => { setSidebar(false); menuBtn.focus(); });
+  backdrop.addEventListener("click", () => setSidebar(false));
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && document.body.classList.contains("sb-open") && !wide.matches) setSidebar(false);
+  });
+
+  loadSettings();
+  readSettings();
+  buildDial();
+  reset();
+})();
+</script>
