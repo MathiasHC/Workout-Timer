@@ -2,6 +2,8 @@
 
 An analog workout timer in a single HTML file: no build step, no dependencies. Open `index.html` in a browser and press **Start**.
 
+**Live:** <https://mathiashc.github.io/Workout-Timer/>
+
 ## Features
 
 - **Analog dial.** One full turn of the hand is the whole workout. The dial redraws its scale for any duration, and a small dial shows the seconds.
@@ -23,7 +25,7 @@ Open `index.html` directly, or serve the folder:
 python3 -m http.server 8000   # then visit http://localhost:8000
 ```
 
-To use it on a phone, host it (e.g. GitHub Pages from the `main` branch) and open the URL there.
+On a phone, open the [live version](https://mathiashc.github.io/Workout-Timer/). It's served by GitHub Pages from `main`, and every push redeploys it.
 
 ## Notes
 
